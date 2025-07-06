@@ -1,0 +1,28 @@
+width: 640
+height: 512
+fx: 431.795259219
+fy: 431.550090267
+cx: 310.833037316
+cy: 266.985989326
+
+select_every_k_frame: 5
+
+sh_degree: 3
+white_background: false
+random_background: false
+convert_SHs_python: false
+compute_cov3D_python: false
+lambda_erank: 0
+scaling_scale: 1
+
+position_lr: 0.00016
+feature_lr: 0.0025
+opacity_lr: 0.05
+scaling_lr: 0.005
+rotation_lr: 0.001
+lambda_dssim: 0.2
+
+apply_exposre: false
+exposure_lr: 0.001
+skybox_points_num: 100000
+skybox_radius: 1000
