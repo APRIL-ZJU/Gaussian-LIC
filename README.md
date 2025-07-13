@@ -118,7 +118,7 @@ Quick start on the sequence hku2 in the FAST-LIVO dataset.
   ```
 
 
-+ The mapping and rendering results will be save in  `~/catkin_gaussian/src/Gaussian-LIC/result`.
++ The mapping and rendering results will be saved in  `~/catkin_gaussian/src/Gaussian-LIC/result`.
 
 ## Citation
 
