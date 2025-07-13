@@ -25,12 +25,8 @@ find_package(catkin REQUIRED COMPONENTS
 
 set(OpenCV_DIR ~/Software/opencv/opencv-4.7.0/build)
 find_package(OpenCV 4 REQUIRED)
-set(Torch_DIR ~/0-gaus/libtorch/share/cmake/Torch)
+set(Torch_DIR ~/Software/libtorch/share/cmake/Torch)
 find_package(Torch REQUIRED)
-
-set(TENSORRT_ROOT "~/Software/TensorRT-8.6.1.6")
-set(TENSORRT_INCLUDE_DIR "${TENSORRT_ROOT}/include")
-set(TENSORRT_LIB_DIR "${TENSORRT_ROOT}/lib")
 
 set(CUDA_TOOLKIT_ROOT_DIR "/usr/local/cuda-11.7")
 set(CUDA_INCLUDE_DIRS "${CUDA_TOOLKIT_ROOT_DIR}/include")
@@ -57,7 +53,6 @@ include_directories(
   ${OpenCV_INCLUDE_DIRS}
   ${YAML_INCLUDE_DIRS}
   ${Python3_INCLUDE_DIRS}
-  ${TENSORRT_INCLUDE_DIR}
   ${CUDA_INCLUDE_DIRS}
 )
 
@@ -82,8 +77,4 @@ target_link_libraries(gs_mapping
                       ${YAML_CPP_LIBRARIES} 
                       ${Python3_LIBRARIES}
                       ${FFI_LIB}
-                      ${CUDA_LIB_DIR}/libcudart.so
-                      ${TENSORRT_LIB_DIR}/libnvinfer.so
-                      ${TENSORRT_LIB_DIR}/libnvonnxparser.so
-                      ${TENSORRT_LIB_DIR}/libnvparsers.so
-                      ${TENSORRT_LIB_DIR}/libnvinfer_plugin.so)
+                      ${CUDA_LIB_DIR}/libcudart.so)

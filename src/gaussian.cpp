@@ -1,3 +1,21 @@
+/*
+ * Gaussian-LIC: Real-Time Photo-Realistic SLAM with Gaussian Splatting and LiDAR-Inertial-Camera Fusion
+ * Copyright (C) 2025 Xiaolei Lang
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #include "gaussian.h"
 #include "tensor_utils.h"
 #include "loss_utils.h"
@@ -109,7 +127,7 @@ GaussianModel::GaussianModel(const Params& prm)
     rotation_lr_ = prm.rotation_lr;
     lambda_dssim_ = prm.lambda_dssim;
 
-    apply_exposure_ = prm.apply_exposre;
+    apply_exposure_ = prm.apply_exposure;
     exposure_lr_ = prm.exposure_lr;
     skybox_points_num_ = prm.skybox_points_num;
     skybox_radius_ = prm.skybox_radius;
@@ -191,10 +209,8 @@ torch::Tensor GaussianModel::getExposure()
     return exposure_;
 }
 
-void GaussianModel::init(const std::shared_ptr<Dataset>& dataset)
+void GaussianModel::initialize(const std::shared_ptr<Dataset>& dataset)
 {
-    std::cout << "\n====== 🍦 Init Gauss Map 🍦 ======\n";
-
     /// foreground
     int num = static_cast<int>(dataset->pointcloud_.size());
     assert(num > 0);
@@ -276,24 +292,20 @@ void GaussianModel::init(const std::shared_ptr<Dataset>& dataset)
     }
 
     GAUSSIAN_MODEL_TENSORS_TO_VEC
-
-    std::cout << "Number of Gaussians at initialisation : " << fused_point_cloud.size(0) << std::endl;
+    
+    std::cout << std::fixed << std::setprecision(2) 
+              << "\033[1;37m Init Map with " 
+              << double(fused_point_cloud.size(0)) / 10000 << "w GS" 
+              << ",\033[0m";
 
     dataset->pointcloud_.clear();
     dataset->pointcolor_.clear();
     dataset->pointdepth_.clear();
 }
 
-void GaussianModel::saveMap()
+void GaussianModel::saveMap(const std::string& result_path)
 {
-    std::cout << "\n====== 🍟 Save Gaussian Map 🍟 ======\n";
-
-    std::filesystem::path home_dir = std::filesystem::path(std::getenv("HOME"));
-
-    std::string res_dir_path = (home_dir / "gs-output/result").string();
-    if (fs::exists(res_dir_path)) fs::remove_all(res_dir_path);
-    fs::create_directories(res_dir_path);
-    std::string result_path = res_dir_path + "/point_cloud.ply";
+    std::string pc_path = result_path + "/point_cloud.ply";
 
     torch::Tensor xyz = this->xyz_.index({torch::indexing::Slice(skybox_points_num_)}).detach().cpu();
     // torch::Tensor normals = torch::zeros_like(xyz);
@@ -304,7 +316,7 @@ void GaussianModel::saveMap()
     torch::Tensor rotation = this->rotation_.index({torch::indexing::Slice(skybox_points_num_)}).detach().cpu();
 
     std::filebuf fb_binary;
-    fb_binary.open(result_path, std::ios::out | std::ios::binary);
+    fb_binary.open(pc_path, std::ios::out | std::ios::binary);
     std::ostream outstream_binary(&fb_binary);
 
     tinyply::PlyFile result_file;
@@ -616,14 +628,16 @@ void extend(const std::shared_ptr<Dataset>& dataset, std::shared_ptr<GaussianMod
 
     pc->densificationPostfix(fused_point_cloud, features_dc, features_rest, opacities, scales, rots);
 
-    std::cout << "Number of added Gaussians : " << fused_point_cloud.size(0) << std::endl;
+    std::cout << std::fixed << std::setprecision(2) 
+              << "\033[1;32m Insert " << double(fused_point_cloud.size(0)) / 1000 
+              << "k GS" << ",\033[0m";
 
     dataset->pointcloud_.clear();
     dataset->pointcolor_.clear();
     dataset->pointdepth_.clear();
 }
 
-int optimize(const std::shared_ptr<Dataset>& dataset, std::shared_ptr<GaussianModel>& pc)
+double optimize(const std::shared_ptr<Dataset>& dataset, std::shared_ptr<GaussianModel>& pc)
 {
     pc->t_start_ = std::chrono::steady_clock::now();
     int updated_num = 0;
@@ -701,22 +715,23 @@ int optimize(const std::shared_ptr<Dataset>& dataset, std::shared_ptr<GaussianMo
         pc->t_step_ += std::chrono::duration_cast<std::chrono::duration<double>>(pc->t_end_ - pc->t_start_).count();
     }
 
-    return updated_num;
+    return updated_num / opt_list.size();
 }
 
-void evaluateVisualQuality(const std::shared_ptr<Dataset>& dataset, std::shared_ptr<GaussianModel>& pc)
+void evaluateVisualQuality(const std::shared_ptr<Dataset>& dataset, 
+                           std::shared_ptr<GaussianModel>& pc,
+                           const std::string& result_path,
+                           const std::string& lpips_path)
 {
-    std::cout << "\n====== 🍟 Evaluate Visual Quality 🍟 ======\n";
-    std::cout << "\nNumber of final Gaussians: " << pc->getXYZ().size(0) << std::endl;
+    std::cout << "\n     🎉 Evaluate Visual Quality 🎉\n";
+    std::cout << "\n        [Number of Final Gaussians] " << pc->getXYZ().size(0) << std::endl;
 
-    std::filesystem::path home_dir = std::filesystem::path(std::getenv("HOME"));
+    if (fs::exists(result_path)) fs::remove_all(result_path);
+    fs::create_directories(result_path);
 
-    std::string render_dir_path = (home_dir / "gs-output/render").string();
-    if (fs::exists(render_dir_path)) fs::remove_all(render_dir_path);
+    std::string render_dir_path = result_path + "/render";
     fs::create_directories(render_dir_path);
-
-    std::string gt_dir_path = (home_dir / "gs-output/gt").string();
-    if (fs::exists(gt_dir_path)) fs::remove_all(gt_dir_path);
+    std::string gt_dir_path = result_path + "/gt";
     fs::create_directories(gt_dir_path);
 
     torch::Tensor bg;
@@ -725,7 +740,7 @@ void evaluateVisualQuality(const std::shared_ptr<Dataset>& dataset, std::shared_
     torch::jit::script::Module m_lpips;
     try 
     {
-        m_lpips = torch::jit::load("/home/jerry/0-gaus/python3_ws/src/gaussian_lic/src/lpips/lpips_alex.pt");
+        m_lpips = torch::jit::load(lpips_path + "/lpips_alex.pt");
         m_lpips.to(torch::kCUDA);
     }
     catch (const c10::Error& e) 
@@ -769,12 +784,11 @@ void evaluateVisualQuality(const std::shared_ptr<Dataset>& dataset, std::shared_
         psnrs /= dataset->train_cameras_.size();
         ssims /= dataset->train_cameras_.size();
         lpipss /= dataset->train_cameras_.size();
-        std::cout << std::fixed << std::setprecision(2) << "[train psnr] " << psnrs << std::endl;
-        std::cout << std::fixed << std::setprecision(3) << "[train ssim] " << ssims << std::endl;
-        std::cout << std::fixed << std::setprecision(3) << "[train lpips] " << lpipss << std::endl;
+        std::cout << std::fixed << std::setprecision(2) << "        [Training View PSNR] " << psnrs << std::endl;
+        std::cout << std::fixed << std::setprecision(3) << "        [Training View SSIM] " << ssims << std::endl;
+        std::cout << std::fixed << std::setprecision(3) << "        [Training View LPIPS] " << lpipss << std::endl;
     }
     {
-        std::cout << "\n";
         double psnrs = 0;
         double ssims = 0;
         double lpipss = 0;
@@ -810,8 +824,8 @@ void evaluateVisualQuality(const std::shared_ptr<Dataset>& dataset, std::shared_
         psnrs /= dataset->test_cameras_.size();
         ssims /= dataset->test_cameras_.size();
         lpipss /= dataset->test_cameras_.size();
-        std::cout << std::fixed << std::setprecision(2) << "[test psnr] " << psnrs << std::endl;
-        std::cout << std::fixed << std::setprecision(3) << "[test ssim] " << ssims << std::endl;
-        std::cout << std::fixed << std::setprecision(3) << "[test lpips] " << lpipss << std::endl;
+        std::cout << std::fixed << std::setprecision(2) << "        [In-Sequence Novel View PSNR] " << psnrs << std::endl;
+        std::cout << std::fixed << std::setprecision(3) << "        [In-Sequence Novel View SSIM] " << ssims << std::endl;
+        std::cout << std::fixed << std::setprecision(3) << "        [In-Sequence Novel View LPIPS] " << lpipss << std::endl;
     }
 }

@@ -2,10 +2,10 @@
 <launch>
   <arg name="config_path"       default = "config/fastlivo.yaml" />
 
-  <!-- <node pkg="gaussian_lic" type="gs_mapping" name="$(anon gs_mapping)" output="screen" clear_params="true" 
-        launch-prefix="gdb -ex run &#45;&#45;args"> -->
   <node pkg="gaussian_lic" type="gs_mapping" name="$(anon gs_mapping)" output="screen">
     <param name="config_path"     type="string" value="$(find gaussian_lic)/$(arg config_path)" />
+    <param name="result_path"     type="string" value="$(find gaussian_lic)/result" />
+    <param name="lpips_path"     type="string" value="$(find gaussian_lic)/src/lpips" />
   </node>
 
 </launch>

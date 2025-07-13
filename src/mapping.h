@@ -1,3 +1,21 @@
+/*
+ * Gaussian-LIC: Real-Time Photo-Realistic SLAM with Gaussian Splatting and LiDAR-Inertial-Camera Fusion
+ * Copyright (C) 2025 Xiaolei Lang
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #pragma once
 
 #include "yaml_utils.h"
@@ -61,7 +79,7 @@ public:
         rotation_lr = node["rotation_lr"].as<double>();
         lambda_dssim = node["lambda_dssim"].as<double>();
 
-        apply_exposre = node["apply_exposre"].as<bool>();
+        apply_exposure = node["apply_exposure"].as<bool>();
         exposure_lr = node["exposure_lr"].as<double>();
         skybox_points_num = node["skybox_points_num"].as<int>();
         skybox_radius = node["skybox_radius"].as<int>();
@@ -93,7 +111,7 @@ public:
     double rotation_lr;
     double lambda_dssim;
 
-    bool apply_exposre;
+    bool apply_exposure;
     double exposure_lr;
     int skybox_points_num;
     int skybox_radius;

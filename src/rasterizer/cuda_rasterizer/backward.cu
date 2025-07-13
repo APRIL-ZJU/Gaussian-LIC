@@ -1,12 +1,19 @@
 /*
- * Copyright (C) 2023, Inria
- * GRAPHDECO research group, https://team.inria.fr/graphdeco
- * All rights reserved.
+ * Gaussian-LIC: Real-Time Photo-Realistic SLAM with Gaussian Splatting and LiDAR-Inertial-Camera Fusion
+ * Copyright (C) 2025 Xiaolei Lang
  *
- * This software is free for non-commercial, research and evaluation use 
- * under the terms of the LICENSE.md file.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
  *
- * For inquiries contact  george.drettakis@inria.fr
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "backward.h"
@@ -396,7 +403,7 @@ PerGaussianRenderCUDA(
 	auto block = cg::this_thread_block();
 	auto my_warp = cg::tiled_partition<32>(block);
 	uint32_t global_bucket_idx = block.group_index().x * my_warp.meta_group_size() + my_warp.meta_group_rank();
-	// uint32_t global_bucket_idx = block.group_index().x;  // [llj]
+	// uint32_t global_bucket_idx = block.group_index().x;  //
 	bool valid_bucket = global_bucket_idx < (uint32_t) B;
 	if (!valid_bucket) return;
 
@@ -508,7 +515,7 @@ PerGaussianRenderCUDA(
 		
 		// every 32nd thread should read the stored state from memory
 		// TODO: perhaps store these things in shared memory?
-		// if (valid_splat && valid_pixel && my_warp.thread_rank() == 0 && idx < end)  // [llj]
+		// if (valid_splat && valid_pixel && my_warp.thread_rank() == 0 && idx < end)  //
 		if (valid_splat && valid_pixel && my_warp.thread_rank() == 0 && idx < BLOCK_SIZE) 
 		{
 			T = sampled_T[global_bucket_idx * BLOCK_SIZE + idx];
@@ -523,7 +530,7 @@ PerGaussianRenderCUDA(
 		}
 
 		// do work
-		// if (valid_splat && valid_pixel && start <= idx && idx < end)  // [llj]
+		// if (valid_splat && valid_pixel && start <= idx && idx < end)  //
 		if (valid_splat && valid_pixel && 0 <= idx && idx < BLOCK_SIZE) 
 		{
 			// if (W <= pix.x || H <= pix.y) continue;

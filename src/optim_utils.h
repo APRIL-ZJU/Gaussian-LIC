@@ -1,3 +1,21 @@
+/*
+ * Gaussian-LIC: Real-Time Photo-Realistic SLAM with Gaussian Splatting and LiDAR-Inertial-Camera Fusion
+ * Copyright (C) 2025 Xiaolei Lang
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #pragma once
 
 #include "rasterizer/rasterize_points.h"
@@ -5,7 +23,6 @@
 #include <vector>
 #include <torch/torch.h>
 
-// State structure
 struct State 
 {
     int64_t step = 0;
@@ -14,43 +31,35 @@ struct State
     bool initialized = false;
 };
 
-// Custom options class for SparseGaussianAdam
 struct SparseGaussianAdamOptions : public torch::optim::OptimizerOptions 
 {
 public:
-    // Constructor
     SparseGaussianAdamOptions(double lr = 1e-3, double eps = 1e-8)
         : lr_(lr), eps_(eps) {}
 
-    // Hyperparameters
     double lr_;
     double eps_;
 
-    // Implement the clone() method
     std::unique_ptr<OptimizerOptions> clone() const override 
     {
         return std::make_unique<SparseGaussianAdamOptions>(*this);
     }
 
-    // Override get_lr() getter
     double get_lr() const override 
     {
         return lr_;
     }
 
-    // Override set_lr() setter
     void set_lr(const double lr) override 
     {
         lr_ = lr;
     }
 
-    // Getter for eps
     double get_eps() const 
     {
         return eps_;
     }
 
-    // Setter for eps if needed
     void set_eps(const double eps) 
     {
         eps_ = eps;
@@ -60,20 +69,17 @@ public:
 class SparseGaussianAdam : public torch::optim::Optimizer 
 {
 public:
-    // Constructor
     SparseGaussianAdam(const std::vector<torch::Tensor>& params, double lr, double eps)
         : torch::optim::Optimizer(
               {torch::optim::OptimizerParamGroup(params)},
               std::make_unique<SparseGaussianAdamOptions>(lr, eps)) {}
 
-    // Setter for visibility and N
     void set_visibility_and_N(const torch::Tensor& visibility, int64_t N) 
     {
         visibility_ = visibility;
         N_ = N;
     }
 
-    // Override the pure virtual step function
     torch::Tensor step(LossClosure closure = nullptr) override 
     {
         torch::Tensor loss;
@@ -82,7 +88,6 @@ public:
             loss = closure();
         }
 
-        // Call the custom step function
         custom_step();
 
         return loss;
@@ -98,10 +103,9 @@ private:
     {
         for (auto& group : param_groups_) 
         {
-            // Correctly access the options
             auto& options = static_cast<SparseGaussianAdamOptions&>(group.options());
             double lr = options.get_lr();
-            double eps = options.eps_;  // Access eps_ directly or use options.get_eps();
+            double eps = options.eps_;
 
             TORCH_CHECK(group.params().size() == 1, "More than one tensor in group");
             auto& param = group.params()[0];
@@ -110,7 +114,6 @@ private:
                 continue;
             }
 
-            // Lazy state initialization
             auto& state = state_[param.unsafeGetTensorImpl()];
             if (!state.initialized) 
             {
@@ -124,10 +127,8 @@ private:
             auto& exp_avg_sq = state.exp_avg_sq;
             int64_t M = param.numel() / N_;
 
-            // Create a mutable copy of param.grad()
             torch::Tensor grad = param.grad().clone();
 
-            // Call the adamUpdate function with mutable grad
             adamUpdate(param, grad, exp_avg, exp_avg_sq, visibility_,
                     lr, 0.9, 0.999, eps, N_, M);
 
@@ -135,7 +136,6 @@ private:
         }
     }
 
-    // Member variables
     torch::Tensor visibility_;
     int64_t N_;
     std::unordered_map<torch::TensorImpl*, State> state_;

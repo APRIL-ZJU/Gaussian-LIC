@@ -1,3 +1,21 @@
+/*
+ * Gaussian-LIC: Real-Time Photo-Realistic SLAM with Gaussian Splatting and LiDAR-Inertial-Camera Fusion
+ * Copyright (C) 2025 Xiaolei Lang
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #include "mapping.h"
 #include "gaussian.h"
 
@@ -18,35 +36,14 @@ std::queue<geometry_msgs::PoseStampedConstPtr> pose_buf;
 std::queue<sensor_msgs::ImageConstPtr> image_buf;
 
 std::atomic<bool> exit_flag(false);
-void checkESC() 
-{
-    struct termios oldt, newt;
-    int oldf;
-
-    tcgetattr(STDIN_FILENO, &oldt);
-    newt = oldt;
-    newt.c_lflag &= ~(ICANON | ECHO);
-    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-    oldf = fcntl(STDIN_FILENO, F_GETFL, 0);
-    fcntl(STDIN_FILENO, F_SETFL, oldf | O_NONBLOCK);
-
-    while (!exit_flag) 
-    {
-        int ch = getchar();
-        if (ch == 27) 
-        {
-            exit_flag = true;
-        }
-    }
-
-    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
-    fcntl(STDIN_FILENO, F_SETFL, oldf);
-}
+std::atomic<double> last_point_time(0.0);
+std::atomic<bool> gaussians_initialized(false);
 
 void pointCallback(const sensor_msgs::PointCloud2ConstPtr& point_msg) 
 {
     m_buf.lock();
     point_buf.push(point_msg);
+    last_point_time = ros::Time::now().toSec();
     m_buf.unlock();
 }
 
@@ -124,11 +121,9 @@ bool getAlignedData(Frame& cur_frame)
     return true;
 }
 
-void mapping(const YAML::Node &node)
+void mapping(const YAML::Node& node, const std::string& result_path, const std::string& lpips_path)
 {
     torch::jit::setGraphExecutorOptimize(false);
-
-    std::thread esc_thread(checkESC);
 
     Params prm(node);
     std::shared_ptr<GaussianModel> gaussians = std::make_shared<GaussianModel>(prm);
@@ -142,100 +137,106 @@ void mapping(const YAML::Node &node)
     Frame cur_frame;
     while (!exit_flag)
     {
-        /// [1]
+        /// [1] data alignment
         m_buf.lock();
-        bool flag = getAlignedData(cur_frame);
+        bool align_flag = getAlignedData(cur_frame);
         m_buf.unlock();
-        if (!flag) continue;
+        if (!align_flag) continue;
         
-        /// [2]
+        /// [2] add every frame
         t_start = std::chrono::steady_clock::now();
         dataset->addFrame(cur_frame);
         torch::cuda::synchronize();
         t_end = std::chrono::steady_clock::now();
-        double tadd = std::chrono::duration_cast<std::chrono::duration<double>>(t_end - t_start).count();
-        std::cout << "\033[33m--------- Add Frame " 
-                  << dataset->all_frame_num_ - 1 
-                  << " | "
-                  << tadd * 1000 << "ms"
-                  << " ---------\033[0m" << std::endl;
-        total_adding_time += tadd;
-
-        if (!dataset->is_keyframe_current_) continue; 
+        if (dataset->is_keyframe_current_)
+        {
+            total_adding_time += std::chrono::duration_cast<std::chrono::duration<double>>(t_end - t_start).count();
+            std::cout << "\033[1;33m     Cur Frame " << dataset->all_frame_num_ - 1 << ",\033[0m";
+        }
+        else continue;
 
         if (!gaussians->is_init_)
         {
-            /// [3]
+            /// [3] initialize map
             gaussians->is_init_ = true;
-            gaussians->init(dataset);
+            gaussians_initialized = true;
+            gaussians->initialize(dataset);
             gaussians->trainingSetup();
         }
         else 
         {
-            /// [4]
+            /// [4] extend map
             t_start = std::chrono::steady_clock::now();
             extend(dataset, gaussians);
             torch::cuda::synchronize();
             t_end = std::chrono::steady_clock::now();
-            double texd = std::chrono::duration_cast<std::chrono::duration<double>>(t_end - t_start).count();
-            total_extending_time += texd;
+            total_extending_time += std::chrono::duration_cast<std::chrono::duration<double>>(t_end - t_start).count();
         }
 
-        /// [5]
+        /// [5] optimize map
         t_start = std::chrono::steady_clock::now();
-        int updated_num = optimize(dataset, gaussians);
+        double updated_num = optimize(dataset, gaussians);
         torch::cuda::synchronize();
         t_end = std::chrono::steady_clock::now();
-        double topt = std::chrono::duration_cast<std::chrono::duration<double>>(t_end - t_start).count();
-        std::cout << "\033[32m--------- Optimize Gauss Map" 
-                  << " | "
-                  << updated_num << " updated"
-                  << " | "
-                  << topt * 1000 << "ms"
-                  << " ---------\033[0m" << std::endl << std::endl;
-        total_mapping_time += topt;
+        total_mapping_time += std::chrono::duration_cast<std::chrono::duration<double>>(t_end - t_start).count();
+        std::cout << std::fixed << std::setprecision(2) 
+                  << "\033[1;36m Update " << updated_num / 10000 
+                  << "w GS per Iter \033[0m" << std::endl;
     }
 
-    esc_thread.join();
-
-    std::cout << "\n🌟 Total Mapping Time " << total_mapping_time << std::endl;
-    std::cout << "\n   👉 Forward Time " << gaussians->t_forward_ << std::endl;
-    std::cout << "\n   👉 Backward Time " << gaussians->t_backward_ << std::endl;
-    std::cout << "\n   👉 Step Time " << gaussians->t_step_ << std::endl;
-    std::cout << "\n   👉 Optlist Time " << gaussians->t_optlist_ << std::endl;
-    std::cout << "\n   👉 Tocuda Time " << gaussians->t_tocuda_ << std::endl;
-    std::cout << "\n🌟 Total Adding Time " << total_adding_time << std::endl;
-    std::cout << "\n🌟 Total Extending Time " << total_extending_time << std::endl;
-
-    /// [6]
+    /// [6] evaluation
+    std::cout << "\n     🎉 Runtime Statistics 🎉\n";
+    std::cout << std::fixed << std::setprecision(2) << "\n        [Total Mapping Time] " << total_mapping_time << "s" << std::endl;
+    std::cout << std::fixed << std::setprecision(2) << "         1) Forward " << gaussians->t_forward_ << "s" << std::endl;
+    std::cout << std::fixed << std::setprecision(2) << "         2) Backward " << gaussians->t_backward_ << "s" << std::endl;
+    std::cout << std::fixed << std::setprecision(2) << "         3) Step " << gaussians->t_step_ << "s" << std::endl;
+    std::cout << std::fixed << std::setprecision(2) << "         4) CPU2GPU " << gaussians->t_tocuda_ << "s" << std::endl;
+    std::cout << std::fixed << std::setprecision(2) << "        [Total Adding Time] " << total_adding_time << "s" << std::endl;
+    std::cout << std::fixed << std::setprecision(2) << "        [Total Extending Time] " << total_extending_time << "s" << std::endl;
     torch::NoGradGuard no_grad;
-    evaluateVisualQuality(dataset, gaussians);
+    evaluateVisualQuality(dataset, gaussians, result_path, lpips_path);
+    gaussians->saveMap(result_path);
 
-    /// [7]
-    gaussians->saveMap();
-
-    std::cout << "\n😋 Gaussian-LIC done!\n";
+    std::cout << "\n\n😋 Gaussian-LIC Done!\n\n\n";
 }
 
 int main(int argc, char** argv)
 {
-    std::cout << "\n😋 Gaussian-LIC\n";
+    std::cout << "\n\n😋 Gaussian-LIC Ready!\n\n\n";
     ros::init(argc, argv, "gaussianlic");
     ros::NodeHandle nh("~");
     ros::Rate loop_rate(1000);
     image_transport::ImageTransport it_(nh);
 
-    ros::Subscriber sub_point = nh.subscribe("/keyframe_points", 10000, pointCallback);
-    ros::Subscriber sub_pose = nh.subscribe("/keyframe_pose", 10000, poseCallback);
-    image_transport::Subscriber image_sub = it_.subscribe("/keyframe_image", 10000, imageCallback);
+    ros::Subscriber sub_point = nh.subscribe("/points_for_gs", 10000, pointCallback);
+    ros::Subscriber sub_pose = nh.subscribe("/pose_for_gs", 10000, poseCallback);
+    image_transport::Subscriber image_sub = it_.subscribe("/image_for_gs", 10000, imageCallback);
 
     std::string config_path;
     nh.param<std::string>("config_path", config_path, "");
     YAML::Node config_node = YAML::LoadFile(config_path);
+    std::string result_path;
+    nh.param<std::string>("result_path", result_path, "");
+    std::string lpips_path;
+    nh.param<std::string>("lpips_path", lpips_path, "");
 
-    std::thread mapping_process(mapping, config_node);
+    std::thread mapping_process(mapping, config_node, result_path, lpips_path);
+    std::thread monitor_thread([](){
+        while (!exit_flag) 
+        {
+            double now = ros::Time::now().toSec();
+            if (gaussians_initialized && (now - last_point_time > 1.0)) 
+            {
+                exit_flag = true;  // exit if no data is received for more than 1 second
+            } 
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
+    });
     
     ros::spin();
+
+    mapping_process.join();
+    monitor_thread.join();
     
     return 0;
 }

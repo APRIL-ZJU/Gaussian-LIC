@@ -1,3 +1,21 @@
+/*
+ * Gaussian-LIC: Real-Time Photo-Realistic SLAM with Gaussian Splatting and LiDAR-Inertial-Camera Fusion
+ * Copyright (C) 2025 Xiaolei Lang
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #pragma once
 
 #include <memory>
@@ -28,15 +46,6 @@
 const double C0 = 0.28209479177387814;
 inline double RGB2SH(double color) {return (color - 0.5) / C0;}
 inline torch::Tensor RGB2SH(torch::Tensor& rgb) {return (rgb - 0.5f) / C0;}
-
-struct VoxelHash  // 三维索引哈希
-{
-    std::size_t operator()(const std::tuple<int, int, int>& key) const 
-    {
-        auto [x, y, z] = key;
-        return std::hash<int>()(x) ^ (std::hash<int>()(y) << 1) ^ (std::hash<int>()(z) << 2);
-    }
-};
 
 class Dataset
 {
@@ -106,8 +115,8 @@ public:
 
     torch::Tensor getExposure();
 
-    void init(const std::shared_ptr<Dataset>& dataset);
-    void saveMap();
+    void initialize(const std::shared_ptr<Dataset>& dataset);
+    void saveMap(const std::string& result_path);
 
     void trainingSetup();
 
@@ -177,5 +186,8 @@ public:
 };
 
 void extend(const std::shared_ptr<Dataset>& dataset, std::shared_ptr<GaussianModel>& pc);
-int optimize(const std::shared_ptr<Dataset>& dataset, std::shared_ptr<GaussianModel>& pc);
-void evaluateVisualQuality(const std::shared_ptr<Dataset>& dataset, std::shared_ptr<GaussianModel>& pc);
+double optimize(const std::shared_ptr<Dataset>& dataset, std::shared_ptr<GaussianModel>& pc);
+void evaluateVisualQuality(const std::shared_ptr<Dataset>& dataset, 
+                           std::shared_ptr<GaussianModel>& pc,
+                           const std::string& result_path,
+                           const std::string& lpips_path);
